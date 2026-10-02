@@ -129,6 +129,23 @@ gui.Name = "NZ-MICHEALZOMBIES"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 2147483647
+local NZ_TOP = 2147483647
+local function nzKeepTop()
+    if gui.Parent and gui.DisplayOrder ~= NZ_TOP then gui.DisplayOrder = NZ_TOP end
+end
+pcall(function()
+    gui:GetPropertyChangedSignal("DisplayOrder"):Connect(nzKeepTop)
+end)
+pcall(function()
+    game:GetService("GuiService"):GetPropertyChangedSignal("MenuIsOpen"):Connect(nzKeepTop)
+end)
+task.spawn(function()
+    while gui and gui.Parent do
+        nzKeepTop()
+        task.wait(0.5)
+    end
+end)
 local pg = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 10)
 local okP = pg and pcall(function() gui.Parent = pg end)
 if not okP then pcall(function() gui.Parent = CoreGui end) end
@@ -170,6 +187,86 @@ main.ClipsDescendants = true
 main.Parent = gui
 corner(main, 12)
 stroke(main, COL_BORDER, 1)
+local NZKEYS = { Enum.KeyCode.Zero }
+if not _G.__NZMouseKey then
+    _G.__NZMouseKey = { on = false }
+    local K = _G.__NZMouseKey
+    local function nzIsBind(k)
+        for _, x in ipairs(NZKEYS) do
+            if x == k then return true end
+        end
+        return false
+    end
+    local function nzApplyUnlock()
+        pcall(function()
+            local cam = workspace.CurrentCamera
+            if K.on then
+                if K.saved == nil then
+                    K.saved = {
+                        b = UserInputService.MouseBehavior,
+                        i = UserInputService.MouseIconEnabled,
+                        c = cam and cam.CameraType,
+                    }
+                end
+                if cam then cam.CameraType = Enum.CameraType.Scriptable end
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled = true
+            else
+                if cam and K.saved and K.saved.c ~= nil then cam.CameraType = K.saved.c end
+                if K.saved then
+                    UserInputService.MouseBehavior = K.saved.b
+                    UserInputService.MouseIconEnabled = K.saved.i
+                    K.saved = nil
+                else
+                    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+                    UserInputService.MouseIconEnabled = false
+                end
+            end
+        end)
+    end
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if not nzIsBind(input.KeyCode) then return end
+        K.on = not K.on
+        K.last = input.KeyCode.Name
+        nzApplyUnlock()
+        pcall(function() print("[NZ] mouse " .. (K.on and "UNLOCKED" or "LOCKED") .. " key=" .. K.last) end)
+    end)
+    task.spawn(function()
+        while true do
+            if K.on then
+                nzApplyUnlock()
+                task.wait(0.05)
+            else
+                task.wait(0.25)
+            end
+        end
+    end)
+end
+local mouseFreed = false
+main.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+            pcall(function()
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled = true
+            end)
+            mouseFreed = true
+        end
+    end
+end)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if _G.__NZMouseKey and _G.__NZMouseKey.on then mouseFreed = false return end
+    if not mouseFreed then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    if gp then return end
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled = false
+    end)
+    mouseFreed = false
+end)
 
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
@@ -483,16 +580,26 @@ do
     local function mzInfo(m) mzStatus.Text = m; mzStatus.TextColor3 = COL_YELLOW end
 
     local function mzFind(name)
-        local f = player:FindFirstChild(name)
-        if f then return f end
-        local pg = player:FindFirstChild("PlayerGui")
-        local par = pg and pg.Parent
-        if par then
-            for _, c in ipairs(par:GetChildren()) do
-                if c.Name == name then return c end
+        local function direct(c)
+            if c then
+                local f = c:FindFirstChild(name)
+                if f then return f end
             end
-            for _, d in ipairs(par:GetDescendants()) do
+            return nil
+        end
+        local ch = player.Character
+        local r = direct(player) or direct(ch)
+        if r then return r end
+        local roots = { player }
+        if ch then table.insert(roots, ch) end
+        for _, root in ipairs(roots) do
+            for _, d in ipairs(root:GetDescendants()) do
                 if d.Name == name and (d:IsA("Folder") or d:IsA("Model")) then return d end
+            end
+        end
+        for _, root in ipairs(roots) do
+            for _, d in ipairs(root:GetDescendants()) do
+                if d.Name == name then return d end
             end
         end
         return nil
@@ -990,23 +1097,42 @@ do
     mzModelDrop.Parent = page
     corner(mzModelDrop, 8)
     stroke(mzModelDrop, COL_ACCENT, 1)
-    local function mzCharValue(name)
-        local cs = mzFind("CharStats")
-        if not cs then return nil end
-        if name == "Knife" then
-            local k = cs:FindFirstChild("Knife")
-            if k and k:IsA("StringValue") then return k end
-            return nil
+    local function mzPick(where, nm)
+        if not where then return nil end
+        local f = where:FindFirstChild(nm)
+        if f and f:IsA("StringValue") then return f end
+        local acc = {}
+        local function walk(r, d)
+            if not r or d > 6 then return end
+            for _, c in ipairs(r:GetChildren()) do
+                if c.Name == nm then table.insert(acc, c) end
+                walk(c, d + 1)
+            end
         end
-        local gi = cs:FindFirstChild("GunInventory")
-        local g = gi and gi:FindFirstChild(name)
-        if g and g:IsA("StringValue") then return g end
-        return nil
+        walk(where, 0)
+        for _, c in ipairs(acc) do
+            if c:IsA("StringValue") then return c end
+        end
+        return acc[1]
     end
     local function mzSetModel(target, value)
-        local v = mzCharValue(target)
-        if not v then mzErr(target .. " not found in CharStats") return false end
-        pcall(function() v.Value = value end)
+        local cs = mzFind("CharStats")
+        if not cs then
+            mzErr("CharStats not in Player or Character")
+            return false
+        end
+        local gi = mzPick(cs, "GunInventory")
+        local v = mzPick(gi, target) or mzPick(cs, target) or mzFind(target)
+        if not v then
+            mzErr(target .. " missing (CharStats / GunInventory)")
+            return false
+        end
+        local ok = pcall(function() v.Value = value end)
+        if not ok then
+            mzErr(target .. " is " .. v.ClassName .. ", not a string value")
+            return false
+        end
+        pcall(function() print("[NZ] " .. target .. " -> " .. v:GetFullName()) end)
         mzOk(target .. " = " .. value)
         return true
     end
