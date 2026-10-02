@@ -130,7 +130,23 @@ gui.Name = "NZ-HUB"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.DisplayOrder = 10000
+gui.DisplayOrder = 2147483647
+local NZ_TOP = 2147483647
+local function nzKeepTop()
+    if gui.Parent and gui.DisplayOrder ~= NZ_TOP then gui.DisplayOrder = NZ_TOP end
+end
+pcall(function()
+    gui:GetPropertyChangedSignal("DisplayOrder"):Connect(nzKeepTop)
+end)
+pcall(function()
+    game:GetService("GuiService"):GetPropertyChangedSignal("MenuIsOpen"):Connect(nzKeepTop)
+end)
+task.spawn(function()
+    while gui and gui.Parent do
+        nzKeepTop()
+        task.wait(0.5)
+    end
+end)
 local pg = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 10)
 local okP = pg and pcall(function() gui.Parent = pg end)
 if not okP then pcall(function() gui.Parent = CoreGui end) end
@@ -152,6 +168,63 @@ main.ClipsDescendants = true
 main.Parent = gui
 corner(main, 12)
 stroke(main, COL_BORDER, 1)
+local NZKEYS = { Enum.KeyCode.Zero }
+if not _G.__NZMouseKey then
+    _G.__NZMouseKey = { on = false }
+    local K = _G.__NZMouseKey
+    local function nzIsBind(k)
+        for _, x in ipairs(NZKEYS) do
+            if x == k then return true end
+        end
+        return false
+    end
+    local function nzApplyUnlock()
+        pcall(function()
+            local cam = workspace.CurrentCamera
+            if K.on then
+                if K.saved == nil then
+                    K.saved = {
+                        b = UserInputService.MouseBehavior,
+                        i = UserInputService.MouseIconEnabled,
+                        c = cam and cam.CameraType,
+                    }
+                end
+                if cam then cam.CameraType = Enum.CameraType.Scriptable end
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled = true
+            else
+                if cam and K.saved and K.saved.c ~= nil then cam.CameraType = K.saved.c end
+                if K.saved then
+                    UserInputService.MouseBehavior = K.saved.b
+                    UserInputService.MouseIconEnabled = K.saved.i
+                    K.saved = nil
+                else
+                    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+                    UserInputService.MouseIconEnabled = false
+                end
+            end
+        end)
+    end
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if not nzIsBind(input.KeyCode) then return end
+        K.on = not K.on
+        K.last = input.KeyCode.Name
+        nzApplyUnlock()
+        pcall(function() print("[NZ] mouse " .. (K.on and "UNLOCKED" or "LOCKED") .. " key=" .. K.last) end)
+    end)
+    task.spawn(function()
+        while true do
+            if K.on then
+                nzApplyUnlock()
+                task.wait(0.05)
+            else
+                task.wait(0.25)
+            end
+        end
+    end)
+end
 local mouseFreed = false
 main.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -165,6 +238,7 @@ main.InputBegan:Connect(function(input)
     end
 end)
 UserInputService.InputBegan:Connect(function(input, gp)
+    if _G.__NZMouseKey and _G.__NZMouseKey.on then mouseFreed = false return end
     if not mouseFreed then return end
     if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
     if gp then return end
