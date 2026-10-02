@@ -130,6 +130,7 @@ gui.Name = "NZ-HUB"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 10000
 local pg = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui", 10)
 local okP = pg and pcall(function() gui.Parent = pg end)
 if not okP then pcall(function() gui.Parent = CoreGui end) end
@@ -151,6 +152,28 @@ main.ClipsDescendants = true
 main.Parent = gui
 corner(main, 12)
 stroke(main, COL_BORDER, 1)
+local mouseFreed = false
+main.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+            pcall(function()
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled = true
+            end)
+            mouseFreed = true
+        end
+    end
+end)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if not mouseFreed then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    if gp then return end
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled = false
+    end)
+    mouseFreed = false
+end)
 
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
